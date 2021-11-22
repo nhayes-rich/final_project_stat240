@@ -1,0 +1,24 @@
+<h1>FEC Fundraising Data</h1>
+
+<p>
+The FEC fundraising data includes a large selection of variables, denoting every recorded instance of donation to a political candidate in both 2016 and 2020. Originally, this dataset was well over 1GB, and as such, we reduced it by including only the relevant data. We summarized the data by candidate, employer, occupation, and location to eliminate redudancies per each of these variables. For example, Joseph Biden received 105 donations from unemployed people in Aberdeen, Maryland alone. Thus, this data is reduced to a single row with an amount, indicating the total of all donations for the given classification, and a count for the number of donations with that classifaction. Additionally, we also reduced this data to the two primary candidates (for each year). Initially, we collapsed the rest to an Other candidate, but this candidate was not very informative, so we removed it
+</p>
+
+<p>
+The variables that ended up in the final dataset are as follows: <br>
+<b>contbr_city / contbr_st</b>: The location of the individual that donated to the political candidate. <br>
+<b>contbr_employer</b>: The employer of the individual. <br>
+<b>contbr_occupation</b>: The occupation of the individual. <br>
+<b>contb_receipt_amt</b>: The total amount donated to the political candidate for all individuals that meet a given row's criteria. <br>
+<b>n</b>: The total number of donations given to the political candidate for all individuals that meet a given row's criteria. <br>
+<b>state</b>: An unabbreviated version of the donating state. <br>
+<b>candidate</b>: For 2016, either Clinton or Trump. For 2020, either Biden or Trump. <br>
+<b>party</b>: Either DEM, or REP. <br>
+<b>year</b>: Either 2016 or 2020.
+</p>
+
+<h2>Caveats</h2>
+
+<p>
+See the caveat given for the FEC spending data. The occupation "self-employed" is likely entered in nearly 1000 different ways. There are 932,110 unique employers listed across 2016 and 2020. There are 266,396 unique occupations listed across 2016 and 2020. Thus, it was impractical to combine all the entries into consistent categories, and as such, we took a similar approach to the spending data, combining those that appear in the top ~100 to the best of our abilities. Additionally, there are 10s or even 100s of thousands of messed up data entry, empty data entry, or otherwise. Originally, the top 50 employers included "MR." and "MS.", so we made accomodations to remove the incorrect entries that appeared in the top ~100. 
+</p>

@@ -1,0 +1,28 @@
+<h1>FEC Spending Data</h1>
+
+<p>
+The FEC spending data includes a large selection of variables, denoting every recorded instance of spending by a political candidate in both 2016 and 2020. Originally, this dataset was well over 1GB, and as such, we reduced it by including only the relevant data. We summarized the data by candidate, recipient, and location to eliminate redudancies per each of these variables. For example, Marshall Sanford spent money at GoDaddy.com on nearly 10 different occasions in Arizona alone. This is reduced to a single row indicating the number of spendings and the total amount. Additionally, we also reduced this data to the two primary candidates (for each year). Initially, we collapsed the rest to an Other candidate, but this candidate was not very informative, so we removed it
+</p>
+
+<p>
+The variables that ended up in the final dataset are as follows: <br>
+<b>recipient_nm</b>: The name of the business, individual, or in some cases, address, that is receiving the money spent by the candidate. <br>
+<b>disb_desc</b>: A description of the purpose of the spending (for example, office supplies or airline fees). <br>
+<b>recipient_city / recipient_st</b>: The location of the business, individual, or address within the US. <br>
+<b>disb_amt</b>: The total amount spent by that candidate at the given business. <br>
+<b>n</b>: The total number of instances that candidate spent money at the given business. <br>
+<b>state</b>: An unabbreviated version of the recipient state. <br>
+<b>candidate</b>: For 2016, either Clinton or Trump. For 2020, either Biden or Trump. <br>
+<b>party</b>: Either DEM, or REP. <br>
+<b>year</b>: Either 2016 or 2020. <br>
+</p>
+
+<h2>Caveats</h2>
+
+<p>
+This data was likely scanned or manually entered from forms that humans filled out. Humans are prone to errors, and as such, this dataset is rife with errors. The recipient name is often written incorrectly, written in different ways, or messed up in any number of ways. For example, the company Apple is present in the dataset in the following ways: APPLE, APPLE STORE - MARYLAND, APPLE WEB STORE, APPLE CHARLESTOWN, APPLE.COM - USA, APPLE FIFTH AVENUE, APPLE ONLINE STORE, APPLE, INC. APPLE STORE, APPLE INC., APPLE INC, APPLE ITUNES, APPLE, INC, APPLE STORE ONLINE, APPLE COMPUTER INC, APPLE APP STORE, and APPLE.COM. For just Apple, there are 17 different ways it is included in the dataset. There are 55,079 unique recipients in the dataset, and as such, it is impractical to combine the different names for each of them. Thus, for names that appeared in the top ~100, we tried to combine these as best as possible. 
+
+Similarly, the description of the purpose for the spending has a multitude of given names for the same property. With 12,906 different descriptions, it was also impractical to address this, so in our analysis, we made similar efforts to combine common descriptions.
+
+Finally, because humans are so error prone, there are also instances where people wrote the wrong thing in the recipient name or description columns, and so a substantial amount of data is not usable.
+</p>

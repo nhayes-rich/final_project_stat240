@@ -1,0 +1,322 @@
+---
+title: "data-wrangling"
+author: "Nathan Hayes-Rich"
+date: "6/7/2021"
+output: html_document
+---
+
+```{r}
+library(leaflet)
+library(stringr)
+library(RColorBrewer)
+library(tidyverse)
+library(caret)
+library(forcats)
+library(maps)
+library(openintro)
+library(usdata)
+```
+
+### Loading Finance Data
+
+```{r}
+### --- LOAD ORIGINAL DATA --- ###
+full_spending_2016 <- read_csv("spending-2016.csv")
+full_spending_2020 <- read_csv("spending-2020.csv")
+
+full_raising_2016 <- read_csv("raising-2016.csv") 
+
+# first two lines have errors in contbr_st and contbr_zip
+full_raising_2016$contbr_st[[1]] <- "DC"
+full_raising_2016$contbr_zip[[1]] <- "20"
+full_raising_2016$contbr_st[[2]] <- "GA"
+full_raising_2016$contbr_zip[[2]] <- "30"
+
+full_raising_2020 <- read_csv("raising-2020.csv")
+```
+
+```{r write-reduced-data}
+### --- WRITE REDUCED DATA --- ###
+# Reduce the data so we can work with much smaller file sizes
+# Select only useful columns, then group by useful columns and summarize the 
+# contributions. Also count number of raisings.
+reduce_raising <- function(x) {
+  x %>%
+    select(cmte_id, cand_nm, 
+           contbr_city, contbr_st, 
+           contbr_employer, contbr_occupation, 
+           contb_receipt_amt) %>%
+    group_by(cmte_id, cand_nm, 
+             contbr_city, contbr_st, 
+             contbr_employer, contbr_occupation) %>%
+    summarize(contb_receipt_amt = sum(contb_receipt_amt), n = n())
+}
+
+# Similar idea as above, but summarizing spendings instead.
+reduce_spending <- function(x) {
+  x %>%
+    group_by(cmte_id, cand_nm, recipient_nm, disb_desc, recipient_city, recipient_st) %>%
+    summarize(disb_amt = sum(disb_amt), n = n())
+}
+
+rr_2016 <- reduce_raising(full_raising_2016) 
+
+rr_2020 <- reduce_raising(full_raising_2020) 
+
+# Write the split datasets
+write_csv(rr_2016, file = "reduced_raising_2016.csv")
+write_csv(rr_2020, file = "reduced_raising_2020.csv")
+
+rs_2016 <- reduce_spending(full_spending_2016)
+rs_2020 <- reduce_spending(full_spending_2020)
+
+write_csv2(rs_2016, file = "reduced_spending_2016.csv")
+write_csv2(rs_2020, file = "reduced_spending_2020.csv")
+```
+
+```{r}
+### --- DATA IMPORT --- ###
+
+raising_2016 <- read_csv(file = "reduced_raising_2016.csv") %>%
+    mutate(state = abbr2state(contbr_st),
+           candidate = cand_nm,
+           candidate = str_remove_all(cand_nm, ",.+"),
+           candidate = case_when(
+               candidate == "Trump" ~ "Trump",
+               candidate == "Clinton" ~ "Clinton",
+               TRUE ~ "Other"
+           ),
+           party = case_when(
+               candidate == "Trump" ~ "REP",
+               candidate == "Clinton" ~ "DEM",
+               TRUE ~ "Other"
+           )) %>%
+    select(-cand_nm, -cmte_id)
+raising_2020 <- read_csv(file = "reduced_raising_2020.csv") %>%
+    mutate(state = abbr2state(contbr_st),
+           candidate = cand_nm,
+           candidate = str_remove_all(cand_nm, ",.+"),
+           candidate = case_when(
+               candidate == "Trump" ~ "Trump",
+               candidate == "Biden" ~ "Biden",
+               TRUE ~ "Other"
+           ),
+           party = case_when(
+               candidate == "Trump" ~ "REP",
+               candidate == "Biden" ~ "DEM",
+               TRUE ~ "Other"
+           )) %>%
+    select(-cand_nm, -cmte_id)
+spending_2016 <- read_csv2(file = "reduced_spending_2016.csv") %>%
+    mutate(state = abbr2state(recipient_st),
+           candidate = str_remove_all(cand_nm, ",.+"),
+           candidate = case_when(
+               candidate == "Trump" ~ "Trump",
+               candidate == "Clinton" ~ "Clinton",
+               TRUE ~ "Other"
+           ),
+           party = case_when(
+               candidate == "Trump" ~ "REP",
+               candidate == "Clinton" ~ "DEM",
+               TRUE ~ "Other"
+           )) %>%
+    select(-cand_nm, -cmte_id)
+spending_2020 <- read_csv2(file = "reduced_spending_2020.csv") %>%
+    mutate(state = abbr2state(recipient_st),
+           candidate = cand_nm,
+           candidate = str_remove_all(cand_nm, ",.+"),
+           candidate = case_when(
+               candidate == "Trump" ~ "Trump",
+               candidate == "Biden" ~ "Biden",
+               TRUE ~ "Other"
+           ),
+           party = case_when(
+               candidate == "Trump" ~ "REP",
+               candidate == "Biden" ~ "DEM",
+               TRUE ~ "Other"
+           )) %>%
+    select(-cand_nm, -cmte_id)
+# Rename variables to match and factorize party
+votes_2016 <- read_csv(file = "pres2016results.csv") %>%
+    filter(year == 2016) %>%
+    mutate(
+        votes = candidatevotes,
+        total_votes = totalvotes,
+        party = as_factor(case_when(party == "democrat" ~ "DEM",  
+                                    party == "republican" ~ "REP",
+                                    TRUE ~ "Other")),
+        pct = votes / total_votes,
+        candidate = str_remove_all(candidate, ".* "),
+        candidate = case_when(
+            candidate == "Trump" ~ "Trump",
+            candidate == "Clinton" ~ "Clinton",
+            TRUE ~ "Other"
+        )) %>%
+    select(-candidatevotes, -totalvotes, -state_po, 
+           -year, -FIPS, -office, -version)
+# Rename variables to match and factorize party and candidate, then reduce
+# them to only have main candidates and main parties
+votes_2020 <- left_join(read_csv(file = "pres2020_county_candidate.csv"),
+                        read_csv(file = "pres2020_county.csv"),
+                        by = c("state", "county")) %>%
+    mutate(votes = total_votes.x,
+           total_votes = total_votes.y,
+           party = fct_collapse(as_factor(party),
+                                "DEM" = "DEM",
+                                "REP" = "REP",
+                                other_level = "Other"),
+           candidate = as_factor(candidate),
+           county = str_remove_all(county, " County"),
+           candidate = str_remove_all(candidate, ".* "),
+           candidate = case_when(
+               candidate == "Trump" ~ "Trump",
+               candidate == "Biden" ~ "Biden",
+               TRUE ~ "Other"
+           )) %>%
+    select(-current_votes, 
+           -total_votes.x, 
+           -total_votes.y,
+           -percent)
+```
+
+```{r}
+### --- DATA WRANGLING FOR MAP --- ###
+
+# Join voting data to raising and spending data for 2016
+map_data_2016 <- votes_2016 %>%
+    group_by(state, candidate, party) %>%
+    summarize(votes = sum(votes, na.rm = TRUE), total_votes = sum(total_votes, na.rm = TRUE), pct = votes / total_votes) %>%
+    left_join(spending_2016 %>% 
+                  group_by(state, candidate, party) %>%
+                  summarize(disb_amt = sum(disb_amt, na.rm = TRUE), disb_n = sum(n, na.rm = TRUE)), by = c("state", "candidate", "party")) %>%
+    left_join(raising_2016 %>% 
+                  group_by(state, candidate, party) %>%
+                  summarize(contb_receipt_amt = sum(contb_receipt_amt, na.rm = TRUE), contb_receipt_n = sum(n, na.rm = TRUE)), by = c("state", "candidate", "party")) %>%
+    mutate(year = 2016)
+# Join voting data to raising and spending data for 2020
+map_data_2020 <- votes_2020 %>%
+    group_by(state, candidate, party) %>%
+    summarize(votes = sum(votes, na.rm = TRUE), total_votes = sum(total_votes, na.rm = TRUE), pct = votes / total_votes) %>%
+    left_join(spending_2020 %>% 
+                  group_by(state, candidate, party) %>%
+                  summarize(disb_amt = sum(disb_amt, na.rm = TRUE), disb_n = sum(n, na.rm = TRUE)), by = c("state", "candidate", "party")) %>%
+    left_join(raising_2020 %>% 
+                  group_by(state, candidate, party) %>%
+                  summarize(contb_receipt_amt = sum(contb_receipt_amt, na.rm = TRUE), contb_receipt_n = sum(n, na.rm = TRUE)), by = c("state", "candidate", "party")) %>%
+    mutate(year = 2020)
+# Combine 2016, 2020 data then provide nice looking names for visualization
+map_data_full <- bind_rows(map_data_2016, map_data_2020) %>%
+    group_by(state, year) %>%
+    mutate(max_votes = max(votes)) %>%
+    group_by(candidate) %>%
+    mutate(
+        Spending = disb_amt,
+        Raising = contb_receipt_amt,
+        `Dollar Spent per Vote` = disb_amt / votes,
+        `Dollar Raised per Vote` = contb_receipt_amt / votes,
+        Won = votes == max_votes,
+        Votes = votes
+    ) %>% ungroup()
+
+write_csv(map_data_full %>% filter(candidate != "Other"), "map_data_full.csv")
+```
+
+```{r}
+### --- FUNDRAISING WRANGLING --- ###
+
+raising_full <- bind_rows(mutate(raising_2016, year = "2016"), mutate(raising_2020, year = "2020")) 
+
+write_csv(raising_full %>% filter(candidate != "Other"), "raising_full.csv")
+
+raising_clean <- raising_full %>%
+    mutate(contbr_employer = fct_recode(as_factor(contbr_employer),
+                                        SELF = "SELF-EMPLOYED",
+                                        SELF = "SELF EMPLOYED",
+                                        SELF = "SELF EMPLOYED-EMPLOYED",
+                                        USPS = "U.S. POSTAL SERVICE",
+                                        `INFORMATION REQUESTED` = "INFORMATION REQUESTED PER BEST EFFORTS",
+                                        `INFORMATION REQUESTED` = "INFORMATION REQUESTD PER BEST EFFORTS",
+                                        NONE = "NOT EMPLOYED",
+                                        NONE = "UNEMPLOYED"),
+           contbr_employer = ifelse(contbr_employer %in% c("MR.", "MS."), NA, as.character(contbr_employer)),
+           contbr_employer = str_replace_all(contbr_employer, "U\\.S\\.", "US"),
+           contbr_occupation = fct_recode(as_factor(contbr_occupation),
+                                          `INFORMATION REQUESTED` = "INFORMATION REQUESTED PER BEST EFFORTS",
+                                          SELF = "SELF-EMPLOYED",
+                                          SELF = "SELF EMPLOYED",
+                                          SELF = "SELF EMPLOYED-EMPLOYED",
+                                          NONE = "NOT EMPLOYED",
+                                          NONE = "UNEMPLOYED"
+           ),
+           contbr_occupation = as.character(contbr_occupation))
+
+raising_by_employer <- raising_clean %>%
+    group_by(contbr_employer, year, candidate) %>%
+    summarize(contb_receipt_amt = sum(contb_receipt_amt), n = sum(n))
+raising_by_occupation <- raising_clean %>%
+    group_by(contbr_occupation, year, candidate) %>%
+    summarize(contb_receipt_amt = sum(contb_receipt_amt), n = sum(n))
+
+write_csv(raising_by_employer, "raising_by_employer.csv")
+write_csv(raising_by_occupation, "raising_by_occupation.csv")
+
+```
+
+```{r}
+### --- SPENDING WRANGLING --- ###
+
+spending_full <- bind_rows(mutate(spending_2016, year = "2016"), mutate(spending_2020, year = "2020")) %>%
+    mutate(disb_desc = fct_recode(as_factor(disb_desc),
+                                  PHONE = "PHONES",
+                                  PHONE = "TELEPHONES",
+                                  PHONE = "TELEPHONE",
+                                  FOOD = "FOOD/BEVERAGE",
+                                  FOOD = "FOOD/BEVERAGES",
+                                  FOOD = "FOOD & BEVERAGE",
+                                  FOOD = "FOOD AND BEVERAGE",
+                                  FOOD = "FOOD & BEVERAGES",
+                                  FOOD = "MEALS",
+                                  FOOD = "CATERING, FOOD & BEVERAGES",
+                                  ONLINE_SERVICES = "ONLINE SERVICES",
+                                  ONLINE_SERVICES = "WEB SERVICES",
+                                  TRANSPORTATION = "AIRFARE",
+                                  TRANSPORTATION = "TRAVEL EXPENSE",
+                                  TRANSPORTATION = "AUTO TRAVEL",
+                                  TRANSPORTATION = "TRANSPORTATION",
+                                  TRANSPORTATION = "TRAVEL AND SUBSISTENCE",
+                                  SITE_RENTAL = "EVENT SITE RENTAL",
+                                  SITE_RENTAL = "SITE RENTAL",
+    ),
+    disb_desc = ifelse(disb_desc %in% c("??"), NA, as.character(disb_desc)),
+    recipient_nm = fct_recode(as_factor(recipient_nm),
+                              "DELTA AIRLINES" = "DELTA AIR LINES",
+                              AMAZON = "AMAZON.COM",
+                              HILTON = "HILTON GARDEN INN",
+                              HILTON = "HILTON HOTELS",
+                              JETBLUE = "JETBLUE AIRWAYS",
+                              VERIZON = "VERIZON WIRELESS",
+                              FACEBOOK = "FACEBOOK.COM",
+                              APPLE = "APPLE ONLINE STORE",
+                              APPLE = "APPLE ITUNES",
+                              APPLE = "APPLE, INC",
+                              APPLE = "APPLE, INC.",
+                              APPLE = "APPLE STORE",
+                              APPLE = "APPLE STORE ONLINE",
+                              APPLE = "APPLE ONLINE STORE",
+                              APPLE = "APPLE.COM")
+    )
+
+write_csv(spending_full %>% filter(candidate != "Other"), "spending_full.csv")
+
+spending_by_desc <- spending_full %>%
+    group_by(disb_desc, year, candidate) %>%
+    summarize(disb_amt = sum(disb_amt), n = sum(n))
+
+spending_by_recipient_name <- spending_full %>%
+    group_by(recipient_nm, year, candidate) %>%
+    summarize(disb_amt = sum(disb_amt), n = sum(n))
+
+write_csv(spending_by_desc %>% filter(candidate != "Other"), "spending_by_desc.csv")
+write_csv(spending_by_recipient_name %>% filter(candidate != "Other"), "spending_by_recipient_name.csv")
+```
+

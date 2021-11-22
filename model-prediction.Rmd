@@ -1,0 +1,242 @@
+---
+title: "Model Prediction"
+author: "Nathan Hayes-Rich"
+date: "6/7/2021"
+output: html_document
+---
+
+```{r}
+library(leaflet)
+library(stringr)
+library(RColorBrewer)
+library(tidyverse)
+library(caret)
+library(forcats)
+library(maps)
+library(openintro)
+library(usdata)
+```
+
+
+```{r}
+### --- DATA IMPORT --- ###
+
+# Read in split data and join into one dataset
+raising_2016 <- read_csv(file = "reduced_raising_2016.csv") %>%
+    mutate(state = abbr2state(contbr_st),
+           candidate = cand_nm,
+           candidate = str_remove_all(cand_nm, ",.+"),
+           candidate = case_when(
+               candidate == "Trump" ~ "Trump",
+               candidate == "Clinton" ~ "Clinton",
+               TRUE ~ "Other"
+           ),
+           party = case_when(
+               candidate == "Trump" ~ "REP",
+               candidate == "Clinton" ~ "DEM",
+               TRUE ~ "Other"
+           )) %>%
+    select(-cand_nm, -cmte_id)
+raising_2020 <- read_csv(file = "reduced_raising_2020.csv") %>%
+    mutate(state = abbr2state(contbr_st),
+           candidate = cand_nm,
+           candidate = str_remove_all(cand_nm, ",.+"),
+           candidate = case_when(
+               candidate == "Trump" ~ "Trump",
+               candidate == "Biden" ~ "Biden",
+               TRUE ~ "Other"
+           ),
+           party = case_when(
+               candidate == "Trump" ~ "REP",
+               candidate == "Biden" ~ "DEM",
+               TRUE ~ "Other"
+           )) %>%
+    select(-cand_nm, -cmte_id)
+spending_2016 <- read_csv2(file = "reduced_spending_2016.csv") %>%
+    mutate(state = abbr2state(recipient_st),
+           candidate = str_remove_all(cand_nm, ",.+"),
+           candidate = case_when(
+               candidate == "Trump" ~ "Trump",
+               candidate == "Clinton" ~ "Clinton",
+               TRUE ~ "Other"
+           ),
+           party = case_when(
+               candidate == "Trump" ~ "REP",
+               candidate == "Clinton" ~ "DEM",
+               TRUE ~ "Other"
+           )) %>%
+    select(-cand_nm, -cmte_id)
+spending_2020 <- read_csv2(file = "reduced_spending_2020.csv") %>%
+    mutate(state = abbr2state(recipient_st),
+           candidate = cand_nm,
+           candidate = str_remove_all(cand_nm, ",.+"),
+           candidate = case_when(
+               candidate == "Trump" ~ "Trump",
+               candidate == "Biden" ~ "Biden",
+               TRUE ~ "Other"
+           ),
+           party = case_when(
+               candidate == "Trump" ~ "REP",
+               candidate == "Biden" ~ "DEM",
+               TRUE ~ "Other"
+           )) %>%
+    select(-cand_nm, -cmte_id)
+# Rename variables to match and factorize party
+votes_2016 <- read_csv(file = "pres2016results.csv") %>%
+    filter(year == 2016) %>%
+    mutate(
+        votes = candidatevotes,
+        total_votes = totalvotes,
+        party = as_factor(case_when(party == "democrat" ~ "DEM",  
+                                    party == "republican" ~ "REP",
+                                    TRUE ~ "Other")),
+        pct = votes / total_votes,
+        candidate = str_remove_all(candidate, ".* "),
+        candidate = case_when(
+            candidate == "Trump" ~ "Trump",
+            candidate == "Clinton" ~ "Clinton",
+            TRUE ~ "Other"
+        )) %>%
+    select(-candidatevotes, -totalvotes, -state_po, 
+           -year, -FIPS, -office, -version)
+# Rename variables to match and factorize party and candidate, then reduce
+# them to only have main candidates and main parties
+votes_2020 <- left_join(read_csv(file = "pres2020_county_candidate.csv"),
+                        read_csv(file = "pres2020_county.csv"),
+                        by = c("state", "county")) %>%
+    mutate(votes = total_votes.x,
+           total_votes = total_votes.y,
+           party = fct_collapse(as_factor(party),
+                                "DEM" = "DEM",
+                                "REP" = "REP",
+                                other_level = "Other"),
+           candidate = as_factor(candidate),
+           county = str_remove_all(county, " County"),
+           candidate = str_remove_all(candidate, ".* "),
+           candidate = case_when(
+               candidate == "Trump" ~ "Trump",
+               candidate == "Biden" ~ "Biden",
+               TRUE ~ "Other"
+           )) %>%
+    select(-current_votes, 
+           -total_votes.x, 
+           -total_votes.y,
+           -percent)
+```
+
+```{r}
+### --- MODEL WRANGLING --- ###
+
+raising_by_city_state <- function(x) {
+    x %>%
+        group_by(candidate, contbr_city, contbr_st) %>%
+        summarize(contb_receipt_amt = sum(contb_receipt_amt), n = sum(n))
+}
+spending_by_city_state <- function(x) {
+    x %>%
+        group_by(candidate, recipient_city, recipient_st) %>%
+        summarize(disb_amt = sum(disb_amt), n = sum(n))
+}
+r_2016_by_city_state <- raising_by_city_state(raising_2016) 
+r_2020_by_city_state <- raising_by_city_state(raising_2020) 
+s_2016_city_state <- spending_by_city_state(spending_2016)
+s_2020_city_state <- spending_by_city_state(spending_2020)
+usa_state_string <- "AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC"
+usa_state_vector <- unlist(str_split(usa_state_string, " "))
+
+r_2016_clinton_trump <- r_2016_by_city_state %>% 
+    filter(candidate == "Trump" | candidate == "Clinton", contbr_st %in% usa_state_vector) %>% 
+    group_by(candidate, contbr_st) %>% 
+    summarise(total_contr = sum(contb_receipt_amt)) %>% 
+    mutate(state = abbr2state(contbr_st))
+r_2020_biden_trump <- r_2020_by_city_state %>% 
+    filter(candidate == "Trump" | candidate == "Biden", contbr_st %in% usa_state_vector) %>% 
+    group_by(candidate, contbr_st) %>% 
+    summarise(total_contr = sum(contb_receipt_amt)) %>% 
+    mutate(state = abbr2state(contbr_st))
+s_2016_clinton_trump <- s_2016_city_state %>% 
+    filter(str_detect(candidate, "(Trump|Clinton)"), recipient_st %in% usa_state_vector) %>% 
+    group_by(candidate, recipient_st) %>% 
+    summarise(total_spending = sum(disb_amt)) %>% 
+    mutate(candidate = str_remove_all(candidate, ",.+"),
+           state = abbr2state(recipient_st))
+s_2020_biden_trump <- s_2020_city_state %>% 
+    filter(str_detect(candidate, "(Trump|Biden)"), recipient_st %in% usa_state_vector) %>% 
+    group_by(candidate, recipient_st) %>% 
+    summarise(total_spending = sum(disb_amt)) %>% 
+    mutate(candidate = str_remove_all(candidate, ",.+"),
+           state = abbr2state(recipient_st))
+v_2016_clinton_trump <- votes_2016 %>% 
+    filter(candidate == "Trump" | candidate == "Clinton") %>% 
+    group_by(candidate, state) %>% 
+    summarise(total_vote = sum(votes, na.rm = T), party = first(party)) %>%
+    group_by(state) %>% 
+    mutate(max_vote = max(total_vote)) %>% 
+    group_by(candidate, state) %>% 
+    mutate(won = ifelse(total_vote == max_vote, TRUE, FALSE))
+
+v_2020_biden_trump <- votes_2020 %>% 
+    filter(candidate == "Trump" | candidate == "Biden") %>% 
+    group_by(candidate, state) %>% 
+    summarise(total_vote = sum(votes, na.rm = T),
+              party = first(party)) %>% 
+    group_by(state) %>% 
+    mutate(max_vote = max(total_vote)) %>% 
+    group_by(candidate, state) %>% 
+    mutate(won = ifelse(total_vote == max_vote, TRUE, FALSE))
+
+v_2016_clinton_trump_full <- v_2016_clinton_trump
+#create train set
+train_2016 <- r_2016_clinton_trump %>% inner_join(s_2016_clinton_trump, by = c("candidate", "state")) %>% 
+    select(-contbr_st, -recipient_st)
+names(train_2016) <- c("candidate", "contribution", "state", "spending")
+train_2016_full <- v_2016_clinton_trump_full %>% left_join(train_2016, by = c("candidate", "state"))
+train_2016_full <- train_2016_full %>% 
+    group_by(state) %>% 
+    mutate(contribution_pct = contribution/sum(contribution)*100,
+           spending_pct = spending/sum(spending)*100)
+#create test set
+test_2020 <- r_2020_biden_trump %>% inner_join(s_2020_biden_trump, by = c("candidate", "state")) %>% 
+    select(-contbr_st, -recipient_st)
+names(test_2020) <- c("candidate", "contribution", "state", "spending")
+test_2020_full <- v_2020_biden_trump %>% left_join(test_2020, by = c("candidate", "state"))
+test_2020_full <- test_2020_full %>% 
+    group_by(state) %>% 
+    mutate(contribution_pct = contribution/sum(contribution)*100,
+           spending_pct = spending/sum(spending)*100)
+
+train_2016_full$won <- factor(train_2016_full$won, levels = c(TRUE, FALSE))
+test_2020_full$won <- factor(test_2020_full$won, levels = c(TRUE, FALSE))
+
+train_control <- trainControl(
+    method = "cv",
+    number = 5,
+)
+
+#alternative direction: only take DEM
+
+train_2016_full_alt <- train_2016_full %>% filter(party == "DEM")
+test_2020_full_alt <- test_2020_full %>% filter(party == "DEM")
+
+set.seed(4950923)
+election_cv <- train(
+    won ~ contribution_pct + spending_pct,
+    data = train_2016_full_alt, # training data
+    method ="knn", # classification method
+    trControl = train_control # validation method
+)
+
+confm_test <- caret::confusionMatrix(
+    data = predict(election_cv, newdata = test_2020_full_alt),
+    reference = test_2020_full_alt$won,
+    positive = "TRUE" )
+
+predict_2020_alt <- test_2020_full_alt
+predict_2020_alt$won <- predict(election_cv, newdata = test_2020_full_alt, type = "raw")
+
+write_csv(train_2016_full_alt, "train_2016_full_alt.csv")
+write_csv(predict_2020_alt, "predict_2020_alt.csv")
+write_csv(test_2020_full_alt, "test_2020_full_alt.csv")
+
+```
+

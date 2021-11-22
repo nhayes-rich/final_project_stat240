@@ -1,0 +1,14 @@
+name: final-project-shaun-david-nathan
+title: final-project-shaun-david-nathan
+username:
+account: hayesrichn
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 4236743
+bundleId: 4688277
+url: https://hayesrichn.shinyapps.io/final-project-shaun-david-nathan/
+when: 1623079978.41666
+lastSyncTime: 1623079978.41666
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: data-wrangling.Rmd|model-prediction.Rmd|README.md

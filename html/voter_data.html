@@ -1,0 +1,9 @@
+<h1>Kaggle Voter Data 2016 and 2020</h1>
+
+<p>
+These data were taken from two separate Kaggle datasets for the 2016 general election and 2020 general election. Generally, they include the same data, although there are some small differences. The 2020 data includes an categorical variable for each candidate indicating whether or not they won a given county or state. This variable is not included in the 2016 data. Since we were limited in time for this project, we decided to not attempt to reproduce this variable for each county in the 2016 data, and instead generalize for both datasets for state winners. That is, for each candidate, for each state, we produce a categorical variable indicating whether or not they won that state. This is calculated using largest plurality rule, and is successful at reproducing election results by state.
+</p>
+
+<p>
+Additionally, the 2020 data included a detailed breakdown of party by candidate whereas the 2016 data included only democrats, republicans, and green party candidates. Many candidates also ran as independents, but we did not want to flood our data with a large number of small third-party candidates with no clear party affiliation. To remedy this, we limited the scope of candidates and parties to only democratic and republican candidates / parties. 
+</p>
